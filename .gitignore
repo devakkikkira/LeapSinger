@@ -39,6 +39,8 @@ data/
 *.onnx
 !checkpoints/nhv_v3_2.onnx
 !checkpoints/nhv_v3_2x.onnx
+!checkpoints/nhv_v3_2_1.onnx
+!checkpoints/nhv_v3_2_1x.onnx
 
 # ── Distributable voicebanks / release assets (GitHub Releases Assets, not tracked)
 checkpoints/leapsinger_oni_nat_ritsu/
