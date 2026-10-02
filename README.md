@@ -1,3 +1,7 @@
+# Akkikkira's PT+BR Branch support (BRAPA System)
+
+Added Support to Brazillian Portuguese using BRAPA Phonectic System! See in the Credits!
+
 # LeapSinger
 
 **English**: [README.en.md](README.en.md)
