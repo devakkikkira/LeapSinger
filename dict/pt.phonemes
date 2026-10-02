@@ -1,0 +1,67 @@
+# LeapSinger phoneme vocabulary — Portuguese (pt-BR, BRAPA set).
+#
+# One phoneme per line; the line order defines the integer id (first line = id 0).
+# Blank lines and text after '#' are ignored. id 0 MUST be the silence / pad token 'pau'.
+#
+# Source: Team-BRAPA/nnsvs-ptbr-brapa-support (FONEMAS.md).
+# Usage: pass this file with `--phonemes <path>` to `preprocess.run` and `train`.
+
+pau # 0: silence / pad
+
+# vowels (oral)
+a # a    - Amigo
+ax # 6   - Câmera
+e # e    - Exausto
+eh # E   - Até
+ae # {   - Pedra
+i # i    - Figo
+i0 # I   - Neném (reduced, word-final)
+o # o    - Hospital
+oh # O   - Pó
+u # u    - Sul
+u0 # U   - Solto (reduced, word-final)
+
+# vowels (nasal)
+an # 6~  - Pão
+en # e~  - Tempo
+in # i~  - Simples
+on # o~  - Som
+un # u~  - Mundo
+
+# semivowels
+y # j    - Pai / Yatch
+w # w    - Meu / Wav
+
+# consonants
+b # b    - Bolo
+ch # tS  - Tchau
+d # d    - Dor
+dj # dZ  - Dizer
+f # f    - Fada
+g # g    - Gato
+h # h    - Carro
+hr # R   - Rança (regional)
+j # Z    - Já
+k # k    - Cor
+l # l    - Lágrima
+lh # L   - Palhaço
+m # m    - Mês
+n # n    - Navio
+ng # N   - Manga
+nh # J   - Sonho
+p # p    - Pipoca
+r # 4    - Pará
+rr # r   - Parte (trilled, regional)
+rw # r\  - Amor (regional)
+rh # @`  - Carne / Perto (retroflex, caipira)
+s # s    - Sorte
+sh # S   - Chão
+t # t    - Torta
+v # v    - Vaso
+x # x    - Partir
+z # z    - Zebra
+
+# special
+cl # closure / glottal stop (held plosive, vowel re-attack)
+vf # vocal fry
+br # breath
