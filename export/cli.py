@@ -8,7 +8,7 @@ Variants (chosen to match the trained ckpt; the only weight-level split is use_u
     diffsinger (A): use_uv=False, n_styles=0. Inputs [tokens, durations, f0 (+spk_embed)].
                     --hop 512 = pseudo-512 (×2 upsample in / pairwise-average out) | 256 = native.
     full       (B): use_uv=True (and/or styles). Inputs [tokens, durations, f0, uv (+spk_embed)].
-                    Native hop. A style-bearing model runs at its base style (ONNX style input not wired).
+                    Native hop. A style-bearing model has one style baked in (--style-id, default 0).
 
 Speaker: none (single-spk) | embed (spk_embed graph input the host feeds) | bake (freeze one
 speaker into the graph; acoustic file becomes {model}.{spk}.onnx).
@@ -16,7 +16,8 @@ speaker into the graph; acoustic file becomes {model}.{spk}.onnx).
 fp32 by default (simple `torch.onnx.export`, the public-release default — none of the fp16
 machinery runs). Pass --fp16 for the ~32% smaller partial-fp16 build (see postprocess.py).
 
-Output: {model}.onnx (fp32 unless --fp16), or {model}.{spk}.onnx when a speaker is baked.
+Output: {model}.onnx (fp32 unless --fp16), or {model}.{spk}.onnx when a speaker is baked;
+a style-bearing model adds .style{N} (e.g. {model}.{spk}.style1.onnx).
 """
 from __future__ import annotations
 
@@ -39,10 +40,13 @@ def _vocab_size(model):
     return model.phoneme_embed.num_embeddings
 
 
-def _validate(cfg, model, variant, speaker):
+def _validate(cfg, model, variant, speaker, style_id=0):
     """Hard checks: variant must match the ckpt's weight-level capabilities."""
     use_uv = bool(cfg.get("use_uv", True))
     has_style = getattr(model, "style_emb", None) is not None
+    if has_style and not 0 <= style_id < model.style_emb.num_embeddings:
+        raise SystemExit(f"--style-id {style_id} is out of range; this ckpt has "
+                         f"{model.style_emb.num_embeddings} styles.")
     if variant == "diffsinger":
         if use_uv:
             raise SystemExit("variant=diffsinger needs a uv-free ckpt (use_uv=False); this ckpt "
@@ -61,12 +65,12 @@ def _validate(cfg, model, variant, speaker):
               "(speaker 0's bank vector is unused; cond gets no speaker term).")
 
 
-def _build_wrapper(model, variant, hop, num_steps, speaker, frozen_spk):
+def _build_wrapper(model, variant, hop, num_steps, speaker, frozen_spk, style_id=0):
     if variant == "diffsinger":
         return AcousticExportWrapperA(model, num_steps=num_steps, hop=hop,
                                       speaker=speaker, frozen_spk=frozen_spk)
     return AcousticExportWrapperB(model, num_steps=num_steps, speaker=speaker,
-                                  frozen_spk=frozen_spk)
+                                  frozen_spk=frozen_spk, style_id=style_id)
 
 
 def _example_and_axes(variant, speaker, hidden, vocab_size):
@@ -99,6 +103,8 @@ def main():
     ap.add_argument("--speaker", choices=["none", "embed", "bake"], default="none")
     ap.add_argument("--spk-name", default=None, help="bake: speaker name; embed: unused")
     ap.add_argument("--spk-id", type=int, default=0, help="bake: which speaker id to freeze")
+    ap.add_argument("--style-id", type=int, default=0,
+                    help="full variant, style-bearing ckpt: which style to bake in (default 0)")
     ap.add_argument("--num-steps", type=int, default=None, help="flow Euler steps (default ckpt infer_steps)")
     ap.add_argument("--opset", type=int, default=17)
     # fp32 is the public-release default (simple export, faster on CPU, lossless). --fp16 opts into
@@ -121,7 +127,7 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     model, cfg = load_acoustic(args.ckpt, device="cpu")
     num_steps = args.num_steps or int(cfg.get("infer_steps", 10))
-    _validate(cfg, model, args.variant, args.speaker)
+    _validate(cfg, model, args.variant, args.speaker, args.style_id)
 
     frozen_spk = None
     acoustic_file = f"{args.model_name}.onnx"
@@ -129,9 +135,11 @@ def main():
         frozen_spk = spk.speaker_vector(model, args.spk_id)
         spk_name = args.spk_name or f"spk{args.spk_id}"
         acoustic_file = f"{args.model_name}.{spk_name}.onnx"
+    if args.variant == "full" and getattr(model, "style_emb", None) is not None:
+        acoustic_file = acoustic_file.replace(".onnx", f".style{args.style_id}.onnx")
 
     wrapper = _build_wrapper(model, args.variant, args.hop, num_steps,
-                             args.speaker, frozen_spk).eval()
+                             args.speaker, frozen_spk, args.style_id).eval()
     wrapper.exc.deterministic = bool(args.deterministic)
 
     input_names, example, axes = _example_and_axes(

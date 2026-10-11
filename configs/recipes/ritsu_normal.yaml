@@ -3,8 +3,8 @@
 # human recording set. Per-song folders each holding {song}.{lab,musicxml,wav}; lab is HTS 100ns.
 # Downloaded by `python preprocess/download_scripts/download_ritsu.py --voice normal` -> download/ritsu_normal/DATABASE.
 name: ritsu_normal
-spk_id: 1                   # same singer as `ritsu`; the Normal tone is a *style*, not a new speaker.
-style_id: 1                # tone id (kire=0 / normal=1 / soft=2) — kept in the shard for style-aware training.
+spk_id: 2                   # same singer as `ritsu`; the Normal tone is a *style*, not a new speaker.
+style_id: 1                # tone id (kire=0 / normal=1 / soft=2); train.py fallback when data.style_map omits this DB
 lab_unit: "100ns"
 save_wav: false            # set true to enable pitch augmentation (stores clip wav)
 

@@ -66,6 +66,11 @@ def load_lab(lab_path: str, *, lab_unit: str = "100ns", sil_map: dict | None = N
         if ph not in vocab:
             unknown.add(ph)
             continue
+        # overlap -> start at the previous end. Durations are rebuilt from e - s cumulatively, so an
+        # overlap would otherwise push every later phoneme boundary late against the audio.
+        s = max(s, prev_e)
+        if e <= s:
+            continue
         if s > prev_e + 1e-6:                                # gap -> pau row (continuity)
             rows.append((prev_e, s, "pau"))
         rows.append((s, e, ph))

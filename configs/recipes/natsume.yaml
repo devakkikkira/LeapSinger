@@ -2,7 +2,7 @@
 # Type-split layout: wav/, mono_label/ (lab in DECIMAL SECONDS), xml/ (.xml MusicXML).
 # Output phrase names are prefixed "natsume".
 name: natsume
-spk_id: 2
+spk_id: 1                  # default id used by train.py when the config's data.spk_map omits this DB
 lab_unit: "sec"
 save_wav: false
 

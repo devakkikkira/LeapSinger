@@ -35,6 +35,25 @@ def _song_of(stem: str) -> str:
     return re.sub(r"_\d{4,}$", "", stem)
 
 
+def _gapless_f0(f0_hz: np.ndarray) -> np.ndarray:
+    """Fill pitch-less frames (f0 <= 1 Hz) by holding/interpolating the real values (in Hz, like
+    preprocess). Older shards store f0 = 0 on the artificial edge silence `cut_phrases` adds;
+    unfilled, those frames would reach the model as 1 Hz, while inference F0 is always gap-less."""
+    good = f0_hz > 1.0
+    if good.all() or not good.any():
+        return f0_hz
+    idx = np.arange(len(f0_hz))
+    return np.interp(idx, idx[good], f0_hz[good]).astype(np.float32)
+
+
+def _lead_pad_frames(f0_raw: np.ndarray) -> int:
+    """Leading artificial-silence frames of an older shard phrase (f0 stored as 0 there; real
+    frames are always interpolated, so leading zeros can only be artificial). Its clip wav does
+    not cover them, so it has to be shifted by this many frames to line up with the mel."""
+    good = np.flatnonzero(f0_raw > 1.0)
+    return int(good[0]) if len(good) else 0
+
+
 def _open(path: str, cache: dict):
     """Lazily open (and cache per process) an npz shard; None if missing. Fork-safe."""
     key = (os.getpid(), str(path))
@@ -64,11 +83,13 @@ class LeapSingerDataset(Dataset):
         self.files: list = []            # (shard_path, phrase_name, db_dir)
         self.frame_counts: List[int] = []
         frame_rate = None
+        self.hop = 256
 
         for d in dirs:
             d = Path(d)
             meta = json.load(open(d / "metadata.json", encoding="utf-8"))
             frame_rate = float(meta.get("frame_rate", frame_rate or 172.265625))
+            self.hop = int(meta.get("hop_size", self.hop))
             phrases = meta["phrases"]
             names = sorted(phrases)
             songs = sorted({_song_of(n) for n in names})
@@ -115,7 +136,8 @@ class LeapSingerDataset(Dataset):
 
         ph_ids    = g("phoneme_ids").astype(np.int64)
         dur_sec   = g("dur_sec").astype(np.float32)
-        f0_hz     = g("f0_interp").astype(np.float32)
+        f0_raw    = g("f0_interp").astype(np.float32)
+        f0_hz     = _gapless_f0(f0_raw)
         uv        = g("uv").astype(np.float32)
         mel       = g("mel").astype(np.float32)
         dbname = os.path.basename(os.path.normpath(dbdir))
@@ -158,7 +180,10 @@ class LeapSingerDataset(Dataset):
         if self.load_wav:
             wz = _open(os.path.join(dbdir, "shard_wav.npz"), self._cache)
             if wz is not None and f"{name}|wav" in wz.files:
-                out["wav"] = wz[f"{name}|wav"].astype(np.float32) / 32767.0
+                wav = wz[f"{name}|wav"].astype(np.float32) / 32767.0
+                if len(wav) < T * self.hop:              # older shard: wav lacks the artificial lead
+                    wav = np.pad(wav, (_lead_pad_frames(f0_raw) * self.hop, 0))
+                out["wav"] = wav
         return out
 
     @torch.no_grad()
@@ -179,7 +204,7 @@ class LeapSingerDataset(Dataset):
                 print(f"[dataset]   {i}/{n_tot} ({_t.time()-_t0:.0f}s)", flush=True)
             shard, name, _ = self.files[i]
             z = _open(shard, self._cache)
-            f0_np = z[f"{name}|f0_interp"].astype(np.float32)
+            f0_np = _gapless_f0(z[f"{name}|f0_interp"].astype(np.float32))   # = __getitem__
             uv_np = z[f"{name}|uv"].astype(np.float32)
             f0l = torch.as_tensor(np.log2(np.maximum(f0_np, 1.0)), device=dev)[None]   # __getitem__ と同一 np.log2
             uvu = (torch.ones_like(f0l) if not use_uv                                  # use_uv 偽なら全域有声
