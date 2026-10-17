@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import os
 
 import yaml
@@ -41,6 +42,15 @@ def run_recipe(recipe_path: str, out_root: str = "data",
     r = yaml.safe_load(open(recipe_path, encoding="utf-8"))
     db_root = r["db_root"]
     out_dir = os.path.join(out_root, r["name"])
+    # process_file skips songs whose phrases already exist, so re-running into the same out_dir
+    # with other frame settings would silently mix old phrases under new metadata.
+    meta_path = os.path.join(out_dir, "metadata.json")
+    if os.path.exists(meta_path):
+        old = json.load(open(meta_path, encoding="utf-8"))
+        prev = (old.get("sample_rate"), old.get("hop_size"), old.get("n_mels"))
+        if None not in prev and prev != (mel.sr, mel.hop, mel.n_mels):
+            raise SystemExit(f"{out_dir} was built with sr/hop/n_mels={prev}, not "
+                             f"{(mel.sr, mel.hop, mel.n_mels)}; use another --out_root or delete it.")
 
     exclude = set(r.get("exclude", []))
     songs = [s for s in _enumerate_songs(r, db_root) if s not in exclude]

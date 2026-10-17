@@ -48,13 +48,17 @@ def _lr_onnx(x, durations):
 class _ExportBase(nn.Module):
     """Shared core: encode -> (speaker inject) -> excitation x0 -> flow.inference (Euler)."""
 
-    def __init__(self, model, num_steps: int, speaker: str = "none", frozen_spk=None):
+    def __init__(self, model, num_steps: int, speaker: str = "none", frozen_spk=None,
+                 style_id: int = 0):
         super().__init__()
         assert speaker in ("none", "embed", "bake"), speaker
         self.model = model
         self.num_steps = int(num_steps)
         self.speaker = speaker
         self.hidden = model.hidden
+        # A style-bearing model was always trained with a style vector in cond, so the graph must
+        # bake one in (style_id); a style-less model ignores it.
+        self.style_id = int(style_id) if getattr(model, "style_emb", None) is not None else None
         # ONNX-friendly excitation matching the model's excitation params + the repo mel recipe.
         self.exc = HarmonicNoiseExcitationONNX(
             n_harm=model.n_harm, sr=SR, exc_hop=model.exc_hop, scale=model.exc_scale,
@@ -72,10 +76,12 @@ class _ExportBase(nn.Module):
         orig_lr = m.length_regulator.forward
         m.length_regulator.forward = lambda x, d, ml=None: _lr_onnx(x, d)     # dynamic frames
         restore_attn = patch_attention_for_export(m)                         # dynamic token axis
+        style_id = (None if self.style_id is None
+                    else torch.full((1,), self.style_id, dtype=torch.long, device=f0l256.device))
         try:
             cond = m._encode(tokens, dur256, f0l256, uv256,
                              None, max_frames=None, spk_id=None,
-                             style_id=None, style_mix=None)                   # [1,H,T]
+                             style_id=style_id, style_mix=None)               # [1,H,T]
         finally:
             m.length_regulator.forward = orig_lr
             restore_attn()
@@ -135,13 +141,16 @@ class AcousticExportWrapperA(_ExportBase):
 class AcousticExportWrapperB(_ExportBase):
     """Optional-featured. forward(tokens, durations, f0, uv [, spk_embed]) -> mel.
     Native hop (256 by default): real v/uv gate. No pseudo-512 resample. A style-bearing model
-    runs at its base style (style 0); ONNX style control is not wired (styles are Python-side)."""
+    has one style baked in (`style_id`, default 0); there is no runtime style input."""
 
-    def __init__(self, model, num_steps: int, speaker: str = "none", frozen_spk=None):
-        super().__init__(model, num_steps, speaker=speaker, frozen_spk=frozen_spk)
+    def __init__(self, model, num_steps: int, speaker: str = "none", frozen_spk=None,
+                 style_id: int = 0):
+        super().__init__(model, num_steps, speaker=speaker, frozen_spk=frozen_spk,
+                         style_id=style_id)
         self.use_uv = getattr(model, "use_uv", True)
 
     def forward(self, tokens, durations, f0, uv, spk_embed=None):
         f0l = torch.log2(f0.clamp(min=1.0))
-        uv_in = uv if self.use_uv else torch.ones_like(f0l)
+        # binarise like training (uv > 0.5) so a soft host flag cannot half-open the harmonic gate
+        uv_in = (uv > 0.5).to(f0l.dtype) if self.use_uv else torch.ones_like(f0l)
         return self._run256(tokens, durations, f0l, uv_in, spk_embed)

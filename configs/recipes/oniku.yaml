@@ -1,7 +1,7 @@
 # Recipe: ONIKU_KURUMI singing DB.
 # Per-song folders each holding {song}.{lab,musicxml,wav}. lab is HTS 100ns.
 name: oniku
-spk_id: 0
+spk_id: 0                  # default id used by train.py when the config's data.spk_map omits this DB
 lab_unit: "100ns"
 save_wav: false
 

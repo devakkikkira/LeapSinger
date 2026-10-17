@@ -148,6 +148,8 @@ The notebook exports the acoustic model to a single ONNX and runs it end to end 
 - **embed** — take a speaker vector as input. One graph can switch to any voice.
 - **none** — for single-speaker models. No speaker input and no baking (a graph with no notion of speaker). For multi-speaker models, use bake or embed.
 
+A style-bearing model (`n_styles` > 0) is exported with `--variant full`, and the style to use is baked into the graph with `--style-id` (default 0) — one ONNX per style.
+
 ### Vocoder
 
 Two NHVSing vocoders are bundled under `checkpoints/`.

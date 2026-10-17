@@ -277,10 +277,18 @@ def to_native_dft(path_in: str, path_out: str, *, n_fft: int = 2048) -> str:
         numpy_helper.from_array(np.array(1, dtype=np.int64), p + "_i1"),
     ])
     frames4, spec = p + "_frames4", p + "_spec"
+    # frames4 [B,T',n_fft,1] -> DFT along n_fft (axis 2), onesided -> [B,T',Fb,2].
+    # opset 17-19 take `axis` as an attribute; opset 20 moved it to an (optional) input.
+    opset = next((o.version for o in model.opset_import if o.domain in ("", "ai.onnx")), 17)
+    if opset >= 20:
+        g.initializer.append(numpy_helper.from_array(np.array(2, dtype=np.int64), p + "_axis"))
+        dft = helper.make_node("DFT", [frames4, "", p + "_axis"], [spec], name=p + "_dft",
+                               inverse=0, onesided=1)
+    else:
+        dft = helper.make_node("DFT", [frames4], [spec], name=p + "_dft", axis=2, inverse=0, onesided=1)
     new = [
         helper.make_node("Unsqueeze", [frames, p + "_axes"], [frames4], name=p + "_unsq"),
-        # frames4 [B,T',n_fft,1] -> DFT along n_fft (axis 2), onesided -> [B,T',Fb,2]
-        helper.make_node("DFT", [frames4], [spec], name=p + "_dft", axis=2, inverse=0, onesided=1),
+        dft,
         helper.make_node("Gather", [spec, p + "_i0"], [re_name], axis=3, name=p + "_re"),  # real
         helper.make_node("Gather", [spec, p + "_i1"], [im_name], axis=3, name=p + "_im"),  # imag
     ]

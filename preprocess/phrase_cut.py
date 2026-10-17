@@ -105,7 +105,7 @@ def find_phrase_spans(
     cl_pau_sec:        float = _CL_PAU_SEC,
     hop_size:          int   = 512,
     sr:                int   = 44_100,
-) -> List[Tuple[int, int, int]]:
+) -> List[Tuple[int, int, int, int]]:
     """フレーズ区間 [(start_frame, end_frame, n_art_lead, n_art_trail), ...] を返す。
     境界は hop_size 倍数(mel フレーム境界)にスナップ済み。n_art_lead/n_art_trail>0 のとき
     その数だけ先頭に人工静音フレームを prepend する(cut_phrases 側で処理)。"""
@@ -394,8 +394,11 @@ def cut_phrases(
             _pad_extra(len(f0_slice), n_art, 0)
             mel_slice = np.concatenate(
                 [np.full((mel_slice.shape[0], n_art), _MEL_FLOOR, dtype=mel_slice.dtype), mel_slice], axis=1)
-            f0_slice  = np.concatenate([np.zeros(n_art, dtype=np.float32), f0_slice])
+            # f0 holds the edge value (gap-less like the rest of f0_interp; uv=0 marks it unvoiced)
+            f0_slice  = np.concatenate([np.full(n_art, f0_slice[0], dtype=np.float32), f0_slice])
             uv_slice  = np.concatenate([np.zeros(n_art, dtype=np.float32), uv_slice])
+            if wav_int16 is not None:                    # keep the clip wav aligned with the mel
+                wav_int16 = np.concatenate([np.zeros(n_art * hop_size, np.int16), wav_int16])
             sel_ids   = np.concatenate([[pau_id], sel_ids])
             sel_dur_s = np.concatenate([[np.float32(n_art / frame_rate)], sel_dur_s])
 
@@ -404,8 +407,10 @@ def cut_phrases(
             _pad_extra(len(f0_slice), 0, n_art_trail)
             mel_slice = np.concatenate(
                 [mel_slice, np.full((mel_slice.shape[0], n_art_trail), _MEL_FLOOR, dtype=mel_slice.dtype)], axis=1)
-            f0_slice  = np.concatenate([f0_slice, np.zeros(n_art_trail, dtype=np.float32)])
+            f0_slice  = np.concatenate([f0_slice, np.full(n_art_trail, f0_slice[-1], dtype=np.float32)])
             uv_slice  = np.concatenate([uv_slice, np.zeros(n_art_trail, dtype=np.float32)])
+            if wav_int16 is not None:
+                wav_int16 = np.concatenate([wav_int16, np.zeros(n_art_trail * hop_size, np.int16)])
             sel_ids   = np.concatenate([sel_ids, [pau_id]])
             sel_dur_s = np.concatenate([sel_dur_s, [np.float32(n_art_trail / frame_rate)]])
 
